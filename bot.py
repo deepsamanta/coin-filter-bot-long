@@ -61,29 +61,39 @@ def get_change_pct(pair, hours):
 
 
 # =====================================================
-# STEP 1: SCAN ALL COINS → FILTER > 15% DROP (1D or 2D)
+# STEP 1: SCAN ALL COINS → FILTER > 15% DROP (6H, 12H, 1D or 2D)
 # =====================================================
 
 def get_losers():
     pairs  = get_all_pairs()
     losers = []
 
-    print(f"Scanning {len(pairs)} pairs for >{DROP_THRESHOLD}% drop (1D or 2D)...\n")
+    print(f"Scanning {len(pairs)} pairs for >{DROP_THRESHOLD}% drop (6H, 12H, 1D or 2D)...\n")
 
     for i, pair in enumerate(pairs):
         symbol = pair_to_symbol(pair)
 
-        pct_1d = get_change_pct(pair, 24)
-        pct_2d = get_change_pct(pair, 48)
+        pct_6h = get_change_pct(pair, 6)
+        pct_12h = get_change_pct(pair, 12)
+        pct_1d  = get_change_pct(pair, 24)
+        pct_2d  = get_change_pct(pair, 48)
 
-        if pct_1d is not None and pct_2d is not None:
-            print(f"[{i+1}/{len(pairs)}] {symbol:20s} → 1D: {pct_1d:+.2f}%  |  2D: {pct_2d:+.2f}%")
+        # Print all timeframes
+        values = [pct_6h, pct_12h, pct_1d, pct_2d]
+        if all(v is not None for v in values):
+            print(f"[{i+1}/{len(pairs)}] {symbol:20s} → "
+                  f"6H: {pct_6h:+.2f}%  |  "
+                  f"12H: {pct_12h:+.2f}%  |  "
+                  f"1D: {pct_1d:+.2f}%  |  "
+                  f"2D: {pct_2d:+.2f}%")
         else:
             print(f"[{i+1}/{len(pairs)}] {symbol:20s} → no data")
 
-        # Add if EITHER 1-day OR 2-day drop is >= 15%
-        if (pct_1d is not None and pct_1d <= -DROP_THRESHOLD) or \
-           (pct_2d is not None and pct_2d <= -DROP_THRESHOLD):
+        # Add if ANY timeframe shows >= 15% drop
+        if (pct_6h  is not None and pct_6h  <= -DROP_THRESHOLD) or \
+           (pct_12h is not None and pct_12h <= -DROP_THRESHOLD) or \
+           (pct_1d  is not None and pct_1d  <= -DROP_THRESHOLD) or \
+           (pct_2d  is not None and pct_2d  <= -DROP_THRESHOLD):
             losers.append(symbol)
 
         time.sleep(0.2)
