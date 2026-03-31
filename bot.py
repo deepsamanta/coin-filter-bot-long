@@ -36,12 +36,12 @@ def pair_to_symbol(pair):
     return pair.replace("B-", "").replace("_", "")
 
 
-def get_daily_change_pct(pair):
+def get_change_pct(pair, hours):
     url = "https://public.coindcx.com/market_data/candlesticks"
     now = int(time.time())
     params = {
         "pair":       pair,
-        "from":       now - (48 * 3600),   # ← changed from 24 to 48 hours
+        "from":       now - (hours * 3600),
         "to":         now,
         "resolution": "60",
         "pcode":      "f",
@@ -53,33 +53,37 @@ def get_daily_change_pct(pair):
         )
         if len(candles) < 2:
             return None
-        open_48h  = float(candles[0]["open"])   # ← renamed for clarity
-        close_now = float(candles[-1]["close"])
-        return round(((close_now - open_48h) / open_48h) * 100, 2)
+        open_price  = float(candles[0]["open"])
+        close_price = float(candles[-1]["close"])
+        return round(((close_price - open_price) / open_price) * 100, 2)
     except Exception:
         return None
 
+
 # =====================================================
-# STEP 1: SCAN ALL COINS → FILTER > 15% DROP
+# STEP 1: SCAN ALL COINS → FILTER > 15% DROP (1D or 2D)
 # =====================================================
 
 def get_losers():
-    pairs   = get_all_pairs()
-    losers  = []
+    pairs  = get_all_pairs()
+    losers = []
 
-    print(f"Scanning {len(pairs)} pairs for >{DROP_THRESHOLD}% drop...\n")
+    print(f"Scanning {len(pairs)} pairs for >{DROP_THRESHOLD}% drop (1D or 2D)...\n")
 
     for i, pair in enumerate(pairs):
         symbol = pair_to_symbol(pair)
-        pct    = get_daily_change_pct(pair)
 
-        if pct is None:
+        pct_1d = get_change_pct(pair, 24)
+        pct_2d = get_change_pct(pair, 48)
+
+        if pct_1d is not None and pct_2d is not None:
+            print(f"[{i+1}/{len(pairs)}] {symbol:20s} → 1D: {pct_1d:+.2f}%  |  2D: {pct_2d:+.2f}%")
+        else:
             print(f"[{i+1}/{len(pairs)}] {symbol:20s} → no data")
-            continue
 
-        print(f"[{i+1}/{len(pairs)}] {symbol:20s} → {pct:+.2f}%")
-
-        if pct <= -DROP_THRESHOLD:                      # ← only change in logic
+        # Add if EITHER 1-day OR 2-day drop is >= 15%
+        if (pct_1d is not None and pct_1d <= -DROP_THRESHOLD) or \
+           (pct_2d is not None and pct_2d <= -DROP_THRESHOLD):
             losers.append(symbol)
 
         time.sleep(0.2)
