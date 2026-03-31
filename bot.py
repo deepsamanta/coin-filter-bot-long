@@ -41,7 +41,7 @@ def get_daily_change_pct(pair):
     now = int(time.time())
     params = {
         "pair":       pair,
-        "from":       now - (24 * 3600),
+        "from":       now - (48 * 3600),   # ← changed from 24 to 48 hours
         "to":         now,
         "resolution": "60",
         "pcode":      "f",
@@ -53,12 +53,11 @@ def get_daily_change_pct(pair):
         )
         if len(candles) < 2:
             return None
-        open_24h  = float(candles[0]["open"])
+        open_48h  = float(candles[0]["open"])   # ← renamed for clarity
         close_now = float(candles[-1]["close"])
-        return round(((close_now - open_24h) / open_24h) * 100, 2)
+        return round(((close_now - open_48h) / open_48h) * 100, 2)
     except Exception:
         return None
-
 
 # =====================================================
 # STEP 1: SCAN ALL COINS → FILTER > 15% DROP
