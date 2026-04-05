@@ -10,7 +10,6 @@ from config import SHEET_ID
 # CONFIG
 # =====================================================
 
-#SHEET_ID        = "your_sheet_id_here"
 DROP_THRESHOLD = 15.0
 
 # =====================================================
@@ -73,12 +72,11 @@ def get_losers():
     for i, pair in enumerate(pairs):
         symbol = pair_to_symbol(pair)
 
-        pct_6h = get_change_pct(pair, 6)
+        pct_6h  = get_change_pct(pair, 6)
         pct_12h = get_change_pct(pair, 12)
         pct_1d  = get_change_pct(pair, 24)
         pct_2d  = get_change_pct(pair, 48)
 
-        # Print all timeframes
         values = [pct_6h, pct_12h, pct_1d, pct_2d]
         if all(v is not None for v in values):
             print(f"[{i+1}/{len(pairs)}] {symbol:20s} → "
@@ -89,7 +87,6 @@ def get_losers():
         else:
             print(f"[{i+1}/{len(pairs)}] {symbol:20s} → no data")
 
-        # Add if ANY timeframe shows >= 15% drop
         if (pct_6h  is not None and pct_6h  <= -DROP_THRESHOLD) or \
            (pct_12h is not None and pct_12h <= -DROP_THRESHOLD) or \
            (pct_1d  is not None and pct_1d  <= -DROP_THRESHOLD) or \
@@ -148,7 +145,7 @@ def add_new_losers(losers):
 # MAIN BOT
 # =====================================================
 
-def run_bot():
+def run_bot(cycle):
     print("=" * 50)
     print("🤖 BOT STARTED")
     print("=" * 50)
@@ -159,8 +156,12 @@ def run_bot():
         print("No losers found below threshold.")
         return
 
-    print("\n--- Cleaning TP COMPLETED rows ---")
-    delete_tp_completed_rows()
+    # Only delete TP COMPLETED rows every 10th cycle (every 10 hours)
+    if cycle % 10 == 0:
+        print("\n--- Cleaning TP COMPLETED rows (every 10th cycle) ---")
+        delete_tp_completed_rows()
+    else:
+        print(f"\n--- Skipping TP cleanup (next cleanup at cycle {((cycle // 10) + 1) * 10}) ---")
 
     print("\n--- Updating sheet with new losers ---")
     added = add_new_losers(losers)
@@ -184,7 +185,7 @@ while True:
         print(f"🔁 CYCLE #{cycle}  |  {time.strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'='*50}")
 
-        run_bot()
+        run_bot(cycle)
 
         cycle += 1
         print(f"\n⏳ Sleeping 1 hour... next run at {time.strftime('%H:%M:%S', time.localtime(time.time() + 3600))}")
