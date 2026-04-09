@@ -11,7 +11,7 @@ from config import SHEET_ID
 # =====================================================
 
 EMA_LEN        = 21
-FILTER_LOOK    = 50      # last 40 x 4H candles
+FILTER_LOOK    = 50      # last 50 x 4H candles
 MIN_BELOW_PERC = 70.0    # % of bars whose close must be BELOW the 21 EMA
 
 # =====================================================
@@ -57,7 +57,8 @@ def calc_ema(closes, length):
 
 
 # =====================================================
-# COIN FILTER — 70% of last 40 x 4H candles below 21 EMA
+# COIN FILTER — 70% of last 50 x 4H candles below 21 EMA
+#               + current price must also be below 21 EMA
 # =====================================================
 
 def passes_ema_filter(pair):
@@ -95,21 +96,30 @@ def passes_ema_filter(pair):
             return False
 
         pct_below = (bars_below / checked) * 100
-        return pct_below >= MIN_BELOW_PERC
+        if pct_below < MIN_BELOW_PERC:
+            return False
+
+        # Current price must also be below the 21 EMA right now
+        current_close = closes[-1]
+        current_ema   = ema_vals[-1]
+        if current_ema is None or current_close >= current_ema:
+            return False
+
+        return True
 
     except Exception:
         return False
 
 
 # =====================================================
-# STEP 1: SCAN ALL COINS → 70% of last 40 x 4H candles below 21 EMA
+# STEP 1: SCAN ALL COINS
 # =====================================================
 
 def get_losers():
     pairs  = get_all_pairs()
     losers = []
 
-    print(f"Scanning {len(pairs)} pairs — 70% of last 40 x 4H candles below 21 EMA...\n")
+    print(f"Scanning {len(pairs)} pairs — 70% of last 50 x 4H candles below 21 EMA + current price below EMA...\n")
 
     for i, pair in enumerate(pairs):
         symbol = pair_to_symbol(pair)
