@@ -10,7 +10,9 @@ from config import SHEET_ID
 # CONFIG
 # =====================================================
 
-DROP_THRESHOLD = 15.0
+EMA_LEN        = 21
+FILTER_LOOK    = 40      # last 40 x 4H candles
+MIN_BELOW_PERC = 70.0    # % of bars whose close must be BELOW the 21 EMA
 
 # =====================================================
 # GOOGLE SHEETS CONNECTION
@@ -35,14 +37,38 @@ def pair_to_symbol(pair):
     return pair.replace("B-", "").replace("_", "")
 
 
-def get_change_pct(pair, hours):
-    url = "https://public.coindcx.com/market_data/candlesticks"
+# =====================================================
+# EMA HELPER
+# =====================================================
+
+def calc_ema(closes, length):
+    k = 2 / (length + 1)
+    ema_vals = [None] * len(closes)
+
+    if len(closes) < length:
+        return ema_vals
+
+    ema_vals[length - 1] = sum(closes[:length]) / length
+
+    for i in range(length, len(closes)):
+        ema_vals[i] = closes[i] * k + ema_vals[i - 1] * (1 - k)
+
+    return ema_vals
+
+
+# =====================================================
+# COIN FILTER — 70% of last 40 x 4H candles below 21 EMA
+# =====================================================
+
+def passes_ema_filter(pair):
+    candles_needed = EMA_LEN + FILTER_LOOK
     now = int(time.time())
+    url = "https://public.coindcx.com/market_data/candlesticks"
     params = {
         "pair":       pair,
-        "from":       now - (hours * 3600),
+        "from":       now - (candles_needed * 4 * 3600),
         "to":         now,
-        "resolution": "60",
+        "resolution": "240",
         "pcode":      "f",
     }
     try:
@@ -50,52 +76,55 @@ def get_change_pct(pair, hours):
             requests.get(url, params=params, timeout=10).json()["data"],
             key=lambda x: x["time"]
         )
-        if len(candles) < 2:
-            return None
-        open_price  = float(candles[0]["open"])
-        close_price = float(candles[-1]["close"])
-        return round(((close_price - open_price) / open_price) * 100, 2)
+        if len(candles) < candles_needed:
+            return False
+
+        closes   = [float(c["close"]) for c in candles]
+        ema_vals = calc_ema(closes, EMA_LEN)
+
+        bars_below = 0
+        checked    = 0
+        for i in range(len(closes) - FILTER_LOOK, len(closes)):
+            if ema_vals[i] is None:
+                continue
+            checked += 1
+            if closes[i] < ema_vals[i]:
+                bars_below += 1
+
+        if checked == 0:
+            return False
+
+        pct_below = (bars_below / checked) * 100
+        return pct_below >= MIN_BELOW_PERC
+
     except Exception:
-        return None
+        return False
 
 
 # =====================================================
-# STEP 1: SCAN ALL COINS → FILTER > 15% DROP (6H, 12H, 1D or 2D)
+# STEP 1: SCAN ALL COINS → 70% of last 40 x 4H candles below 21 EMA
 # =====================================================
 
 def get_losers():
     pairs  = get_all_pairs()
     losers = []
 
-    print(f"Scanning {len(pairs)} pairs for >{DROP_THRESHOLD}% drop (6H, 12H, 1D or 2D)...\n")
+    print(f"Scanning {len(pairs)} pairs — 70% of last 40 x 4H candles below 21 EMA...\n")
 
     for i, pair in enumerate(pairs):
         symbol = pair_to_symbol(pair)
 
-        pct_6h  = get_change_pct(pair, 6)
-        pct_12h = get_change_pct(pair, 12)
-        pct_1d  = get_change_pct(pair, 24)
-        pct_2d  = get_change_pct(pair, 48)
+        ema_ok = passes_ema_filter(pair)
 
-        values = [pct_6h, pct_12h, pct_1d, pct_2d]
-        if all(v is not None for v in values):
-            print(f"[{i+1}/{len(pairs)}] {symbol:20s} → "
-                  f"6H: {pct_6h:+.2f}%  |  "
-                  f"12H: {pct_12h:+.2f}%  |  "
-                  f"1D: {pct_1d:+.2f}%  |  "
-                  f"2D: {pct_2d:+.2f}%")
-        else:
-            print(f"[{i+1}/{len(pairs)}] {symbol:20s} → no data")
-
-        if (pct_6h  is not None and pct_6h  <= -DROP_THRESHOLD) or \
-           (pct_12h is not None and pct_12h <= -DROP_THRESHOLD) or \
-           (pct_1d  is not None and pct_1d  <= -DROP_THRESHOLD) or \
-           (pct_2d  is not None and pct_2d  <= -DROP_THRESHOLD):
+        if ema_ok:
+            print(f"[{i+1}/{len(pairs)}] {symbol:20s} → ✅ passed — added!")
             losers.append(symbol)
+        else:
+            print(f"[{i+1}/{len(pairs)}] {symbol:20s} → ❌ failed EMA filter")
 
         time.sleep(0.2)
 
-    print(f"\n✅ Found {len(losers)} losers below -{DROP_THRESHOLD}%: {losers}\n")
+    print(f"\n✅ Found {len(losers)} coins: {losers}\n")
     return losers
 
 
@@ -153,17 +182,16 @@ def run_bot(cycle):
     losers = get_losers()
 
     if not losers:
-        print("No losers found below threshold.")
+        print("No coins passed the EMA filter.")
         return
 
-    # Only delete TP COMPLETED rows every 10th cycle (every 10 hours)
     if cycle % 10 == 0:
         print("\n--- Cleaning TP COMPLETED rows (every 10th cycle) ---")
         delete_tp_completed_rows()
     else:
         print(f"\n--- Skipping TP cleanup (next cleanup at cycle {((cycle // 10) + 1) * 10}) ---")
 
-    print("\n--- Updating sheet with new losers ---")
+    print("\n--- Updating sheet with new coins ---")
     added = add_new_losers(losers)
 
     print("\n" + "=" * 50)
