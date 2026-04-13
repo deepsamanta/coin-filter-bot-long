@@ -222,18 +222,18 @@ def run_bot(cycle):
         return
 
     # Every 10th cycle: delete TP COMPLETED rows
-    if cycle % 10 == 0:
+    if cycle % 1 == 0:
         print("\n--- Cleaning TP COMPLETED rows (every 10th cycle) ---")
         delete_tp_completed_rows()
     else:
-        print(f"\n--- Skipping TP cleanup (next cleanup at cycle {((cycle // 10) + 1) * 10}) ---")
+        print(f"\n--- Skipping TP cleanup (next cleanup at cycle {((cycle // 1) + 1) * 1}) ---")
 
     # Every 5th cycle: remove coins no longer below EMA with no active trade
     if cycle % 7 == 0:
         print("\n--- Removing coins no longer below EMA with no active trade (every 5th cycle) ---")
         remove_failed_coins(failed)
     else:
-        print(f"\n--- Skipping EMA cleanup (next cleanup at cycle {((cycle // 5) + 1) * 5}) ---")
+        print(f"\n--- Skipping EMA cleanup (next cleanup at cycle {((cycle // 7) + 1) * 7}) ---")
 
     print("\n--- Updating sheet with new coins ---")
     added = add_new_losers(losers)
