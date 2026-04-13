@@ -57,8 +57,8 @@ def calc_ema(closes, length):
 
 
 # =====================================================
-# COIN FILTER — 70% of last 50 x 4H candles below 21 EMA
-#               + current price must also be below 21 EMA
+# COIN FILTER — 70% of last 50 x 4H candles BELOW 21 EMA
+#               + current price must also be BELOW 21 EMA
 # =====================================================
 
 def passes_ema_filter(pair):
@@ -99,7 +99,7 @@ def passes_ema_filter(pair):
         if pct_below < MIN_BELOW_PERC:
             return False
 
-        # Current price must also be below the 21 EMA right now
+        # Current price must also be BELOW the 21 EMA right now
         current_close = closes[-1]
         current_ema   = ema_vals[-1]
         if current_ema is None or current_close >= current_ema:
@@ -112,30 +112,30 @@ def passes_ema_filter(pair):
 
 
 # =====================================================
-# STEP 1: SCAN ALL COINS
+# STEP 1: SCAN ALL COINS — returns (losers, failed_symbols)
 # =====================================================
 
 def get_losers():
     pairs  = get_all_pairs()
     losers = []
+    failed = []  # coins that did NOT pass (price no longer below EMA)
 
     print(f"Scanning {len(pairs)} pairs — 70% of last 50 x 4H candles below 21 EMA + current price below EMA...\n")
 
     for i, pair in enumerate(pairs):
         symbol = pair_to_symbol(pair)
 
-        ema_ok = passes_ema_filter(pair)
-
-        if ema_ok:
+        if passes_ema_filter(pair):
             print(f"[{i+1}/{len(pairs)}] {symbol:20s} → ✅ passed — added!")
             losers.append(symbol)
         else:
             print(f"[{i+1}/{len(pairs)}] {symbol:20s} → ❌ failed EMA filter")
+            failed.append(symbol)  # price is back above EMA or condition not met
 
         time.sleep(0.2)
 
     print(f"\n✅ Found {len(losers)} coins: {losers}\n")
-    return losers
+    return losers, failed
 
 
 # =====================================================
@@ -154,7 +154,33 @@ def delete_tp_completed_rows():
 
 
 # =====================================================
-# STEP 3: ADD NEW COINS NOT ALREADY IN COLUMN A
+# STEP 3: REMOVE FAILED COINS WITH NO ACTIVE TRADE
+#         Runs every 5th cycle
+#         A coin "failed" here means it no longer stays below EMA
+#         (i.e. the bearish condition is broken)
+#         Remove only if column B is blank (no active trade)
+# =====================================================
+
+def remove_failed_coins(failed_symbols):
+    rows = sheet.get_all_values()
+    failed_upper = set(s.upper() for s in failed_symbols)
+
+    print("\n--- Checking sheet for coins no longer below EMA with no active trade ---")
+
+    for i in range(len(rows) - 1, -1, -1):
+        symbol = str(rows[i][0]).strip().upper() if rows[i] else ""
+        col_b  = str(rows[i][1]).strip() if len(rows[i]) > 1 else ""
+
+        if symbol in failed_upper and col_b == "":
+            sheet.delete_rows(i + 1)
+            print(f"[SHEET] 🗑️  Removed {symbol} — no longer below EMA + no active trade")
+            time.sleep(0.3)
+        elif symbol in failed_upper and col_b != "":
+            print(f"[SHEET] ⚠️  Skipped {symbol} — no longer below EMA but trade is active ({col_b})")
+
+
+# =====================================================
+# STEP 4: ADD NEW COINS NOT ALREADY IN COLUMN A
 # =====================================================
 
 def add_new_losers(losers):
@@ -189,17 +215,25 @@ def run_bot(cycle):
     print("🤖 BOT STARTED")
     print("=" * 50)
 
-    losers = get_losers()
+    losers, failed = get_losers()
 
     if not losers:
         print("No coins passed the EMA filter.")
         return
 
+    # Every 10th cycle: delete TP COMPLETED rows
     if cycle % 10 == 0:
         print("\n--- Cleaning TP COMPLETED rows (every 10th cycle) ---")
         delete_tp_completed_rows()
     else:
         print(f"\n--- Skipping TP cleanup (next cleanup at cycle {((cycle // 10) + 1) * 10}) ---")
+
+    # Every 5th cycle: remove coins no longer below EMA with no active trade
+    if cycle % 7 == 0:
+        print("\n--- Removing coins no longer below EMA with no active trade (every 5th cycle) ---")
+        remove_failed_coins(failed)
+    else:
+        print(f"\n--- Skipping EMA cleanup (next cleanup at cycle {((cycle // 5) + 1) * 5}) ---")
 
     print("\n--- Updating sheet with new coins ---")
     added = add_new_losers(losers)
