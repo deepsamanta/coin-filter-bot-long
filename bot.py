@@ -55,27 +55,27 @@ def calc_ema(closes, length):
 
     return ema_vals
 
-
 # =====================================================
-# COIN FILTER — Last 200 x 15m candles BELOW 200 EMA
+# COIN FILTER — 70% of last 200 x 15m candles BELOW 200 EMA
+#               + current price must also be BELOW 200 EMA
 # =====================================================
 
 def passes_ema_filter(pair):
 
-    EMA_LEN = 200
-    CANDLES_REQUIRED = 200
+    EMA_LEN        = 200
+    FILTER_LOOK    = 200
+    MIN_BELOW_PERC = 70.0
 
-    candles_needed = EMA_LEN + CANDLES_REQUIRED
-
+    candles_needed = EMA_LEN + FILTER_LOOK
     now = int(time.time())
 
     url = "https://public.coindcx.com/market_data/candlesticks"
 
     params = {
         "pair": pair,
-        "from": now - (candles_needed * 15 * 60),  # 15 minute candles
+        "from": now - (candles_needed * 15 * 60),  # 15m timeframe
         "to": now,
-        "resolution": "15",  # 15m timeframe
+        "resolution": "15",
         "pcode": "f",
     }
 
@@ -88,25 +88,43 @@ def passes_ema_filter(pair):
         if len(candles) < candles_needed:
             return False
 
-        closes = [float(c["close"]) for c in candles]
-
+        closes   = [float(c["close"]) for c in candles]
         ema_vals = calc_ema(closes, EMA_LEN)
 
-        # check last 200 candles
-        for i in range(len(closes) - CANDLES_REQUIRED, len(closes)):
-            if ema_vals[i] is None:
-                return False
+        bars_below = 0
+        checked    = 0
 
-            # if ANY candle is above EMA → fail
-            if closes[i] >= ema_vals[i]:
-                return False
+        # Check last 200 candles
+        for i in range(len(closes) - FILTER_LOOK, len(closes)):
+            if ema_vals[i] is None:
+                continue
+
+            checked += 1
+
+            if closes[i] < ema_vals[i]:
+                bars_below += 1
+
+        if checked == 0:
+            return False
+
+        pct_below = (bars_below / checked) * 100
+
+        if pct_below < MIN_BELOW_PERC:
+            return False
+
+        # Current price must also be BELOW 200 EMA
+        current_close = closes[-1]
+        current_ema   = ema_vals[-1]
+
+        if current_ema is None or current_close >= current_ema:
+            return False
 
         return True
 
     except Exception:
         return False
     
-
+    
 # =====================================================
 # STEP 1: SCAN ALL COINS — returns (losers, failed_symbols)
 # =====================================================
