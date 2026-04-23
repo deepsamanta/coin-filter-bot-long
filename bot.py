@@ -236,7 +236,7 @@ def run_bot(cycle):
         return
 
     # Every 10th cycle: delete TP COMPLETED rows
-    if cycle % 1 == 0:
+    if cycle % 10 == 0:
         print("\n--- Cleaning TP COMPLETED rows (every 10th cycle) ---")
         delete_tp_completed_rows()
     else:
